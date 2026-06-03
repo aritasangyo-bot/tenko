@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>アルコール検査・点呼報告</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 15px; background: #eef2f5; color: #333; margin: 0; }
+        .card { background: white; padding: 25px 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 450px; margin: 20px auto; }
+        h2 { text-align: center; color: #0056b3; margin-top: 0; margin-bottom: 25px; font-size: 22px; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
+        .form-group { margin-bottom: 22px; }
+        label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 15px; }
+        select, input[type="number"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; background: #fafafa; }
+        .radio-group { display: flex; gap: 20px; margin-top: 5px; }
+        .radio-label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 16px; }
+        .checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 16px; font-weight: bold; background: #e6f2ff; padding: 12px; border-radius: 6px; border: 1px dashed #0076ff; }
+        input[type="radio"], input[type="checkbox"] { transform: scale(1.3); margin: 0; }
+        input[type="file"] { display: none; }
+        .file-drop-area { border: 2px dashed #0056b3; border-radius: 6px; padding: 20px; text-align: center; background: #f8fbff; cursor: pointer; font-weight: bold; color: #0056b3; font-size: 16px; }
+        .file-drop-area:active { background: #e6f0fa; }
+        #preview { width: 100%; margin-top: 15px; display: none; border-radius: 6px; border: 1px solid #ddd; }
+        .btn { width: 100%; background: #0056b3; color: white; padding: 15px; border: none; border-radius: 6px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn:active { background: #004085; }
+        .btn:disabled { background: #aaa; cursor: not-allowed; }
+        #status { text-align: center; font-weight: bold; margin-top: 15px; font-size: 15px; padding: 10px; border-radius: 6px; display: none; }
+        #status.success { color: #155724; background: #d4edda; display: block; }
+        #status.error { color: #721c24; background: #f8d7da; display: block; }
+        #status.loading { color: #004085; background: #cce5ff; display: block; }
+        .size-info { font-size: 12px; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h2>点呼・アルコール検査報告</h2>
+
+    <div class="form-group">
+        <label for="name">運転者名</label>
+        <select id="name" required>
+            <option value="">選択してください</option>
+            <option value="東郷">東郷</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>報告タイミング</label>
+        <div class="radio-group">
+            <label class="radio-label"><input type="radio" name="timing" value="運転前" checked> 運転前（始業）</label>
+            <label class="radio-label"><input type="radio" name="timing" value="運転後"> 運転後（終業）</label>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="checkbox-label">
+            <input type="checkbox" id="license" checked> 免許証を携帯しています
+        </label>
+    </div>
+
+    <div class="form-group">
+        <label for="alcohol">アルコール検知数値 (mg/L)</label>
+        <input type="number" id="alcohol" step="0.01" min="0.00" placeholder="0.00" value="0.00" required>
+    </div>
+
+    <div class="form-group">
+        <label>測定器の数値＋本人の顔写真</label>
+        <div class="file-drop-area" onclick="document.getElementById('photo').click()">
+            📸 ここをタップしてカメラで撮影
+        </div>
+        <input type="file" id="photo" accept="image/*" capture="environment">
+        <div class="size-info" id="size-info"></div>
+        <img id="preview" alt="撮影写真のプレビュー">
+    </div>
+
+    <button type="button" class="btn" id="submitBtn" onclick="submitForm()">報告を送信する</button>
+    <div id="status"></div>
+</div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwc3cKgJ1-TsgYscvgCONhXkPLsJC2l0MJonX-E2M31I1IKhFPj0y5nHOExep9kPHnEPg/exec';
+
+let compressedBase64 = '';
+
+document.getElementById('photo').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    document.getElementById('size-info').textContent = '画像を軽量化中...';
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            const MAX_WIDTH = 1000;
+            if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+            }
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+
+            const sizeKB = Math.round((compressedBase64.length * 3/4) / 1024);
+            document.getElementById('size-info').textContent = `圧縮完了：約${sizeKB}KB（元画像から大幅削減）`;
+
+            const preview = document.getElementById('preview');
+            preview.src = compressedBase64;
+            preview.style.display = 'block';
+        };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+});
+
+function submitForm() {
+    const name = document.getElementById('name').value;
+    const timing = document.querySelector('input[name="timing"]:checked').value;
+    const license = document.getElementById('license').checked ? '携帯' : '不携帯';
+    const alcohol = document.getElementById('alcohol').value;
+
+    if (!name) { alert('氏名を選択してください'); return; }
+    if (!compressedBase64) { alert('写真を撮影してください'); return; }
+
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+    const payload = { date, time, name, timing, license, alcohol, photo: compressedBase64 };
+
+    const statusDiv = document.getElementById('status');
+    const btn = document.getElementById('submitBtn');
+    statusDiv.className = 'loading';
+    statusDiv.textContent = '送信中...';
+    btn.disabled = true;
+
+    fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            statusDiv.className = 'success';
+            statusDiv.textContent = '点呼報告が完了しました！お疲れ様です。';
+            document.getElementById('name').value = '';
+            document.getElementById('alcohol').value = '0.00';
+            document.getElementById('license').checked = true;
+            document.getElementById('preview').style.display = 'none';
+            document.getElementById('size-info').textContent = '';
+            compressedBase64 = '';
+        } else {
+            statusDiv.className = 'error';
+            statusDiv.textContent = 'エラーが発生しました。もう一度試してください。';
+        }
+        btn.disabled = false;
+    })
+    .catch(() => {
+        statusDiv.className = 'error';
+        statusDiv.textContent = '通信エラーです。電波状況を確認してください。';
+        btn.disabled = false;
+    });
+}
+</script>
+</body>
+</html>
